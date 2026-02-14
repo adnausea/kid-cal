@@ -105,6 +105,74 @@ describe('StateManager', () => {
     });
   });
 
+  describe('findDuplicateEvent / findDuplicateActionItem', () => {
+    beforeEach(() => {
+      manager.saveProcessedEmail({
+        messageId: 'email-1',
+        from: 'teacher@school.org',
+        subject: 'Events',
+        processedAt: new Date().toISOString(),
+        status: 'success',
+        errorMessage: null,
+        eventCount: 1,
+        actionItemCount: 1,
+      });
+    });
+
+    it('returns null when no matching event exists', () => {
+      expect(manager.findDuplicateEvent('Field Trip', '2025-04-15T09:00:00')).toBeNull();
+    });
+
+    it('finds duplicate event by title and date (case-insensitive, ignoring time)', () => {
+      manager.saveEvent({
+        title: 'Field Trip to Zoo',
+        description: 'Class trip',
+        startDate: '2025-04-15T09:00:00',
+        endDate: null,
+        allDay: false,
+        location: 'Zoo',
+        sourceEmailId: 'email-1',
+      });
+
+      // Same title, same date, different time
+      const dup = manager.findDuplicateEvent('field trip to zoo', '2025-04-15T14:00:00');
+      expect(dup).not.toBeNull();
+      expect(dup!.title).toBe('Field Trip to Zoo');
+    });
+
+    it('does not match events with different dates', () => {
+      manager.saveEvent({
+        title: 'Field Trip',
+        description: 'Trip',
+        startDate: '2025-04-15T09:00:00',
+        endDate: null,
+        allDay: false,
+        location: null,
+        sourceEmailId: 'email-1',
+      });
+
+      expect(manager.findDuplicateEvent('Field Trip', '2025-04-16T09:00:00')).toBeNull();
+    });
+
+    it('returns null for action item with no deadline', () => {
+      expect(manager.findDuplicateActionItem('Some Task', null)).toBeNull();
+    });
+
+    it('finds duplicate action item by title and deadline', () => {
+      manager.saveActionItem({
+        title: 'Return Permission Slip',
+        description: 'Sign and return',
+        deadline: '2025-04-10T00:00:00',
+        priority: 'high',
+        sourceEmailId: 'email-1',
+      });
+
+      const dup = manager.findDuplicateActionItem('return permission slip', '2025-04-10T12:00:00');
+      expect(dup).not.toBeNull();
+      expect(dup!.title).toBe('Return Permission Slip');
+    });
+  });
+
   describe('isReminderSent / saveReminder', () => {
     beforeEach(() => {
       manager.saveProcessedEmail({

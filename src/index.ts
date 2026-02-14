@@ -120,9 +120,18 @@ export async function processEmails(
         }
       }
 
-      // Create calendar events
+      // Create calendar events (with cross-email dedup)
       for (const event of extraction.events) {
         try {
+          const duplicate = stateManager.findDuplicateEvent(event.title, event.startDate);
+          if (duplicate) {
+            logger.info(
+              { title: event.title, startDate: event.startDate, existingEventId: duplicate.id },
+              'Skipping duplicate event (already exists from another email)',
+            );
+            continue;
+          }
+
           const storedEvent = stateManager.saveEvent(event);
           try {
             const calendarId = await withRetry(
@@ -139,9 +148,18 @@ export async function processEmails(
         }
       }
 
-      // Create action item reminders on calendar
+      // Create action item reminders on calendar (with cross-email dedup)
       for (const item of extraction.actionItems) {
         try {
+          const duplicate = stateManager.findDuplicateActionItem(item.title, item.deadline);
+          if (duplicate) {
+            logger.info(
+              { title: item.title, deadline: item.deadline, existingActionItemId: duplicate.id },
+              'Skipping duplicate action item (already exists from another email)',
+            );
+            continue;
+          }
+
           const storedItem = stateManager.saveActionItem(item);
           try {
             const calendarId = await withRetry(

@@ -40,6 +40,12 @@ const configSchema = z.object({
   // Database
   DB_PATH: z.string().default('./kid-cal.db'),
 
+  // Grade filtering
+  CHILD_GRADE: z.string().default('5'),
+  EXCLUDE_KEYWORDS: z.string().default('').transform((s) =>
+    s ? s.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean) : []
+  ),
+
   // Logging
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 });

@@ -1,6 +1,7 @@
 import type { ParsedEmail } from '../types.js';
 
-export const SYSTEM_PROMPT = `You are an expert at extracting calendar events and action items from school emails.
+export function buildSystemPrompt(childGrade: string): string {
+  return `You are an expert at extracting calendar events and action items from school emails.
 
 Your job is to analyze emails from schools, teachers, and school administrators to identify:
 
@@ -17,15 +18,23 @@ Your job is to analyze emails from schools, teachers, and school administrators 
    - Register for something
    - Volunteer sign-ups
 
+**Grade filtering — IMPORTANT:**
+The parent's child is in grade ${childGrade}. Only extract events and action items that are:
+- Specifically for grade ${childGrade}
+- School-wide (all grades, whole school, no specific grade mentioned)
+- Related to the transition to middle school (relevant for a ${childGrade}th grader)
+Skip events that are clearly targeted at other grades (e.g., "kindergarten field trip", "8th grade graduation").
+
 **Rules:**
-- Extract ALL events and action items, even if there are many in one email
+- Extract ALL relevant events and action items, even if there are many in one email
 - Use the school year context: if a month is mentioned without a year, infer the correct year based on the email date and school year (Aug-Jun)
 - For times, use the timezone provided in the user message
 - If an event has no specific time, mark it as all_day: true
 - Set priority: "high" for required items with deadlines, "medium" for important but flexible, "low" for optional
-- If the email contains no events or action items (e.g., a newsletter with only informational content), return empty arrays
+- If the email contains no relevant events or action items, return empty arrays
 - Keep titles concise but specific (include the school/class name if relevant)
 - For the summary, write one sentence a busy parent can quickly scan`;
+}
 
 export function buildUserPrompt(email: ParsedEmail, timezone: string): string {
   return `Today's date: ${new Date().toISOString().split('T')[0]}

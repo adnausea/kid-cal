@@ -4,7 +4,26 @@ import { getConfig } from '../config.js';
 import { getLogger } from '../logger.js';
 import type { ParsedEmail, ExtractionResult, ExtractedEvent, ExtractedActionItem } from '../types.js';
 import { extractionResultSchema } from './schemas.js';
-import { SYSTEM_PROMPT, buildUserPrompt } from './prompt.js';
+import { buildSystemPrompt, buildUserPrompt } from './prompt.js';
+
+export function filterByKeywords<T extends { title: string; description: string }>(
+  items: T[],
+  excludeKeywords: string[],
+  label: string,
+): T[] {
+  if (excludeKeywords.length === 0) return items;
+
+  const logger = getLogger();
+  return items.filter((item) => {
+    const text = `${item.title} ${item.description}`.toLowerCase();
+    const matchedKeyword = excludeKeywords.find((kw) => text.includes(kw.toLowerCase()));
+    if (matchedKeyword) {
+      logger.info({ title: item.title, matchedKeyword, label }, 'Filtered out by exclude keyword');
+      return false;
+    }
+    return true;
+  });
+}
 
 let _client: Anthropic | null = null;
 
@@ -28,7 +47,7 @@ export async function extractFromEmail(email: ParsedEmail): Promise<ExtractionRe
   const message = await client.messages.parse({
     model: config.CLAUDE_MODEL,
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(config.CHILD_GRADE),
     messages: [
       {
         role: 'user',
@@ -67,19 +86,26 @@ export async function extractFromEmail(email: ParsedEmail): Promise<ExtractionRe
     sourceEmailSubject: email.subject,
   }));
 
+  // Post-extraction keyword filter
+  const excludeKeywords = config.EXCLUDE_KEYWORDS;
+  const filteredEvents = filterByKeywords(events, excludeKeywords, 'event');
+  const filteredActionItems = filterByKeywords(actionItems, excludeKeywords, 'action_item');
+
   logger.info(
     {
       messageId: email.messageId,
-      eventCount: events.length,
-      actionItemCount: actionItems.length,
+      eventCount: filteredEvents.length,
+      actionItemCount: filteredActionItems.length,
+      filteredEvents: events.length - filteredEvents.length,
+      filteredActionItems: actionItems.length - filteredActionItems.length,
       summary: parsed.summary,
     },
     'Extraction complete',
   );
 
   return {
-    events,
-    actionItems,
+    events: filteredEvents,
+    actionItems: filteredActionItems,
     summary: parsed.summary,
   };
 }

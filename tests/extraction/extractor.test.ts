@@ -5,6 +5,8 @@ vi.mock('../../src/config.js', () => ({
     ANTHROPIC_API_KEY: 'test-key',
     CLAUDE_MODEL: 'claude-sonnet-4-5-20250929',
     TIMEZONE: 'America/New_York',
+    CHILD_GRADE: '5',
+    EXCLUDE_KEYWORDS: [],
     LOG_LEVEL: 'error',
   }),
 }));
@@ -29,7 +31,7 @@ vi.mock('@anthropic-ai/sdk/helpers/zod', () => ({
   zodOutputFormat: vi.fn().mockReturnValue({ type: 'json_schema' }),
 }));
 
-import { extractFromEmail } from '../../src/extraction/extractor.js';
+import { extractFromEmail, filterByKeywords } from '../../src/extraction/extractor.js';
 import type { ParsedEmail } from '../../src/types.js';
 
 function makeEmail(overrides: Partial<ParsedEmail> = {}): ParsedEmail {
@@ -127,5 +129,35 @@ describe('extractFromEmail', () => {
     for (const item of result.actionItems) {
       expect(item.sourceEmailId).toBe('custom-id');
     }
+  });
+});
+
+describe('filterByKeywords', () => {
+  const items = [
+    { title: 'Field Trip to Zoo', description: 'All 5th graders' },
+    { title: 'Kindergarten Graduation', description: 'For kindergarten students' },
+    { title: '8th Grade Dance', description: 'End of year celebration' },
+    { title: 'School-wide Assembly', description: 'Everyone welcome' },
+  ];
+
+  it('returns all items when no keywords', () => {
+    expect(filterByKeywords(items, [], 'test')).toHaveLength(4);
+  });
+
+  it('filters items matching keywords in title', () => {
+    const result = filterByKeywords(items, ['kindergarten', '8th grade'], 'test');
+    expect(result).toHaveLength(2);
+    expect(result.map((i) => i.title)).toEqual(['Field Trip to Zoo', 'School-wide Assembly']);
+  });
+
+  it('filters items matching keywords in description', () => {
+    const result = filterByKeywords(items, ['kindergarten'], 'test');
+    expect(result).toHaveLength(3);
+    expect(result.find((i) => i.title === 'Kindergarten Graduation')).toBeUndefined();
+  });
+
+  it('is case-insensitive', () => {
+    const result = filterByKeywords(items, ['KINDERGARTEN'], 'test');
+    expect(result).toHaveLength(3);
   });
 });

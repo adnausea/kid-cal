@@ -78,6 +78,29 @@ export class StateManager {
     return this.db.prepare('SELECT * FROM action_items WHERE id = ?').get(result.lastInsertRowid) as StoredActionItem;
   }
 
+  findDuplicateEvent(title: string, startDate: string): StoredEvent | null {
+    const dateOnly = startDate.split('T')[0];
+    const row = this.db.prepare(`
+      SELECT * FROM events
+      WHERE LOWER(title) = LOWER(?)
+        AND DATE(start_date) = DATE(?)
+      LIMIT 1
+    `).get(title, dateOnly) as StoredEvent | undefined;
+    return row ?? null;
+  }
+
+  findDuplicateActionItem(title: string, deadline: string | null): StoredActionItem | null {
+    if (!deadline) return null;
+    const dateOnly = deadline.split('T')[0];
+    const row = this.db.prepare(`
+      SELECT * FROM action_items
+      WHERE LOWER(title) = LOWER(?)
+        AND DATE(deadline) = DATE(?)
+      LIMIT 1
+    `).get(title, dateOnly) as StoredActionItem | undefined;
+    return row ?? null;
+  }
+
   updateEventCalendarId(eventId: number, calendarEventId: string): void {
     this.db.prepare(
       'UPDATE events SET calendar_event_id = ? WHERE id = ?'

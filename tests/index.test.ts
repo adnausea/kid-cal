@@ -81,6 +81,8 @@ function makeStateManager(overrides: Record<string, unknown> = {}): StateManager
     saveActionItem: vi.fn().mockReturnValue({ id: 1 }),
     updateEventCalendarId: vi.fn(),
     updateActionItemCalendarId: vi.fn(),
+    findDuplicateEvent: vi.fn().mockReturnValue(null),
+    findDuplicateActionItem: vi.fn().mockReturnValue(null),
     ...overrides,
   } as unknown as StateManager;
 }
@@ -305,6 +307,48 @@ describe('processEmails', () => {
     expect(sm.saveActionItem).toHaveBeenCalled();
     expect(sm.updateActionItemCalendarId).not.toHaveBeenCalled();
     expect(poller.markSeen).not.toHaveBeenCalled();
+  });
+
+  it('skips duplicate events', async () => {
+    const poller = makePoller({
+      fetchUnseen: vi.fn().mockResolvedValue([rawEmail]),
+    });
+    const sm = makeStateManager({
+      findDuplicateEvent: vi.fn().mockReturnValue({ id: 99, title: 'Field Trip' }),
+    });
+
+    mockParseEmail.mockResolvedValue(parsedEmail);
+    mockIsSchoolEmail.mockReturnValue(true);
+    mockExtractFromEmail.mockResolvedValue(extraction);
+    mockCreateActionItemReminder.mockResolvedValue('cal-id-2');
+
+    await processEmails(poller, sm);
+
+    expect(sm.saveEvent).not.toHaveBeenCalled();
+    expect(mockCreateCalendarEvent).not.toHaveBeenCalled();
+    // Action items still processed
+    expect(sm.saveActionItem).toHaveBeenCalled();
+  });
+
+  it('skips duplicate action items', async () => {
+    const poller = makePoller({
+      fetchUnseen: vi.fn().mockResolvedValue([rawEmail]),
+    });
+    const sm = makeStateManager({
+      findDuplicateActionItem: vi.fn().mockReturnValue({ id: 99, title: 'Permission Slip' }),
+    });
+
+    mockParseEmail.mockResolvedValue(parsedEmail);
+    mockIsSchoolEmail.mockReturnValue(true);
+    mockExtractFromEmail.mockResolvedValue(extraction);
+    mockCreateCalendarEvent.mockResolvedValue('cal-id-1');
+
+    await processEmails(poller, sm);
+
+    expect(sm.saveActionItem).not.toHaveBeenCalled();
+    expect(mockCreateActionItemReminder).not.toHaveBeenCalled();
+    // Events still processed
+    expect(sm.saveEvent).toHaveBeenCalled();
   });
 
   it('handles action item with null calendar id (no deadline)', async () => {

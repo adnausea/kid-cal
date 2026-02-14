@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SYSTEM_PROMPT, buildUserPrompt } from '../../src/extraction/prompt.js';
+import { buildSystemPrompt, buildUserPrompt } from '../../src/extraction/prompt.js';
 import type { ParsedEmail } from '../../src/types.js';
 
 function makeEmail(overrides: Partial<ParsedEmail> = {}): ParsedEmail {
@@ -16,11 +16,23 @@ function makeEmail(overrides: Partial<ParsedEmail> = {}): ParsedEmail {
   };
 }
 
-describe('SYSTEM_PROMPT', () => {
+describe('buildSystemPrompt', () => {
   it('is a non-empty string', () => {
-    expect(SYSTEM_PROMPT).toBeTruthy();
-    expect(typeof SYSTEM_PROMPT).toBe('string');
-    expect(SYSTEM_PROMPT.length).toBeGreaterThan(100);
+    const prompt = buildSystemPrompt('5');
+    expect(prompt).toBeTruthy();
+    expect(typeof prompt).toBe('string');
+    expect(prompt.length).toBeGreaterThan(100);
+  });
+
+  it('includes the child grade in filtering instructions', () => {
+    const prompt = buildSystemPrompt('5');
+    expect(prompt).toContain('grade 5');
+    expect(prompt).toContain('middle school');
+  });
+
+  it('uses the provided grade value', () => {
+    const prompt = buildSystemPrompt('3');
+    expect(prompt).toContain('grade 3');
   });
 });
 
