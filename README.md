@@ -4,6 +4,8 @@ School email → Google Calendar + Telegram reminder daemon.
 
 Monitors a Yahoo Mail inbox for school communications, uses Claude to extract structured events and action items, adds them to Google Calendar, and sends Telegram reminders for upcoming deadlines.
 
+Built as a personal productivity tool, but engineered using the same reliability, idempotency, and integration discipline applied to production backend systems.
+
 ---
 
 ## Why I Built This
