@@ -313,7 +313,7 @@ async function main(): Promise<void> {
           );
           consecutiveImapFailures = 0; // Reset only on successful alert
         } catch (smsError) {
-          logger.error({ error: smsError }, 'Failed to send IMAP failure alert SMS');
+          logger.error({ error: smsError }, 'Failed to send IMAP failure alert');
         }
       }
 
