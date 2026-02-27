@@ -94,18 +94,6 @@ export class EmailPoller {
     return emails;
   }
 
-  async markSeen(uid: number): Promise<void> {
-    if (!this.client) throw new Error('IMAP client not connected');
-
-    const lock = await this.client.getMailboxLock('INBOX');
-    try {
-      await this.client.messageFlagsAdd({ uid }, ['\\Seen'], { uid: true });
-      this.logger.debug({ uid }, 'Marked as seen');
-    } finally {
-      lock.release();
-    }
-  }
-
   async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.logout();

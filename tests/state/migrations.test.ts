@@ -24,11 +24,11 @@ describe('runMigrations', () => {
     const db = new Database(':memory:');
     initializeSchema(db);
 
-    // Should not throw — currently no migrations beyond version 1
+    // Fresh DBs are seeded at the latest schema version — runMigrations should be a no-op
     runMigrations(db);
 
     const version = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as { version: number };
-    expect(version.version).toBe(1);
+    expect(version.version).toBe(2);
 
     db.close();
   });
@@ -41,7 +41,7 @@ describe('runMigrations', () => {
     runMigrations(db);
 
     const version = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as { version: number };
-    expect(version.version).toBe(1);
+    expect(version.version).toBe(2);
 
     db.close();
   });

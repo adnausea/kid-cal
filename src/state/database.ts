@@ -74,7 +74,7 @@ export function initializeSchema(db: Database.Database): void {
       action_item_id INTEGER REFERENCES action_items(id),
       reminder_type TEXT NOT NULL,
       sent_at TEXT NOT NULL DEFAULT (datetime('now')),
-      twilio_message_sid TEXT
+      notification_sid TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_events_start_date ON events(start_date);
@@ -83,9 +83,10 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sent_reminders_action ON sent_reminders(action_item_id, reminder_type);
   `);
 
-  // Record schema version if not exists
-  const hasVersion = db.prepare('SELECT version FROM schema_version WHERE version = 1').get();
-  if (!hasVersion) {
+  // Record schema versions for fresh installs (schema already incorporates all migrations)
+  const hasVersion1 = db.prepare('SELECT version FROM schema_version WHERE version = 1').get();
+  if (!hasVersion1) {
     db.prepare('INSERT INTO schema_version (version) VALUES (1)').run();
+    db.prepare('INSERT INTO schema_version (version) VALUES (2)').run();
   }
 }

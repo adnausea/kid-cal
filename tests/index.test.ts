@@ -66,7 +66,6 @@ function makePoller(overrides: Partial<EmailPoller> = {}): EmailPoller {
   return {
     connect: vi.fn(),
     fetchUnseen: vi.fn().mockResolvedValue([]),
-    markSeen: vi.fn(),
     disconnect: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
     ...overrides,
@@ -172,7 +171,6 @@ describe('processEmails', () => {
     expect(sm.saveActionItem).toHaveBeenCalled();
     expect(mockCreateActionItemReminder).toHaveBeenCalled();
     expect(sm.updateActionItemCalendarId).toHaveBeenCalledWith(1, 'cal-id-2');
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('skips already-processed emails', async () => {
@@ -189,7 +187,6 @@ describe('processEmails', () => {
 
     expect(mockIsSchoolEmail).not.toHaveBeenCalled();
     expect(mockExtractFromEmail).not.toHaveBeenCalled();
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('skips non-school emails without marking them as read', async () => {
@@ -204,7 +201,6 @@ describe('processEmails', () => {
     await processEmails(poller, sm);
 
     expect(mockExtractFromEmail).not.toHaveBeenCalled();
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('sends SMS alert on extraction failure', async () => {
@@ -266,7 +262,6 @@ describe('processEmails', () => {
     expect(sm.updateEventCalendarId).not.toHaveBeenCalled();
     // Action item still processed
     expect(sm.saveActionItem).toHaveBeenCalled();
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('records failure when parse throws', async () => {
@@ -283,7 +278,6 @@ describe('processEmails', () => {
       status: 'failed',
       errorMessage: 'parse error',
     }));
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('handles action item calendar failure gracefully', async () => {
@@ -306,7 +300,6 @@ describe('processEmails', () => {
 
     expect(sm.saveActionItem).toHaveBeenCalled();
     expect(sm.updateActionItemCalendarId).not.toHaveBeenCalled();
-    expect(poller.markSeen).not.toHaveBeenCalled();
   });
 
   it('skips duplicate events', async () => {

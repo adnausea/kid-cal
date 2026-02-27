@@ -9,14 +9,13 @@ interface Migration {
 
 const migrations: Migration[] = [
   // Version 1 is the initial schema created in database.ts
-  // Future migrations go here:
-  // {
-  //   version: 2,
-  //   description: 'Add some_column to events',
-  //   up: (db) => {
-  //     db.exec('ALTER TABLE events ADD COLUMN some_column TEXT');
-  //   },
-  // },
+  {
+    version: 2,
+    description: 'Rename twilio_message_sid to notification_sid in sent_reminders',
+    up: (db) => {
+      db.exec('ALTER TABLE sent_reminders RENAME COLUMN twilio_message_sid TO notification_sid');
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

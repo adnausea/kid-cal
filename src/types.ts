@@ -85,7 +85,7 @@ export interface StoredReminder {
   action_item_id: number | null;
   reminder_type: ReminderType;
   sent_at: string;
-  twilio_message_sid: string | null;
+  notification_sid: string | null;
 }
 
 export interface DueReminder {

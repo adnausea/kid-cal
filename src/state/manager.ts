@@ -138,12 +138,12 @@ export class StateManager {
     eventId: number | null,
     actionItemId: number | null,
     reminderType: ReminderType,
-    twilioMessageSid: string | null,
+    notificationSid: string | null,
   ): void {
     this.db.prepare(`
-      INSERT INTO sent_reminders (event_id, action_item_id, reminder_type, twilio_message_sid)
+      INSERT INTO sent_reminders (event_id, action_item_id, reminder_type, notification_sid)
       VALUES (?, ?, ?, ?)
-    `).run(eventId, actionItemId, reminderType, twilioMessageSid);
+    `).run(eventId, actionItemId, reminderType, notificationSid);
   }
 
   getUpcomingEvents(withinDays: number): StoredEvent[] {

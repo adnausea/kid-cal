@@ -22,7 +22,6 @@ const mockConnect = vi.fn();
 const mockLogout = vi.fn();
 const mockGetMailboxLock = vi.fn();
 const mockFetch = vi.fn();
-const mockMessageFlagsAdd = vi.fn();
 
 vi.mock('imapflow', () => ({
   ImapFlow: class MockImapFlow {
@@ -30,7 +29,6 @@ vi.mock('imapflow', () => ({
     logout = mockLogout;
     getMailboxLock = mockGetMailboxLock;
     fetch = mockFetch;
-    messageFlagsAdd = mockMessageFlagsAdd;
     on = vi.fn();
     usable = true;
     constructor() {}
@@ -123,19 +121,6 @@ describe('EmailPoller', () => {
       const emails = await poller.fetchUnseen();
       expect(emails).toHaveLength(1);
       expect(emails[0].messageId).toBe(`testuser@test.com:42:${date.toISOString()}`);
-    });
-  });
-
-  describe('markSeen', () => {
-    it('throws when not connected', async () => {
-      await expect(poller.markSeen(1)).rejects.toThrow('IMAP client not connected');
-    });
-
-    it('adds \\Seen flag', async () => {
-      await poller.connect();
-      await poller.markSeen(42);
-      expect(mockMessageFlagsAdd).toHaveBeenCalledWith({ uid: 42 }, ['\\Seen'], { uid: true });
-      expect(mockRelease).toHaveBeenCalled();
     });
   });
 
