@@ -31,8 +31,9 @@ export class EmailPoller {
       logger: false, // Suppress imapflow's own logging
     });
 
-    this.client.on('error', (err: Error) => {
+    this.client.on('error', async (err: Error) => {
       this.logger.warn({ error: err }, 'IMAP connection error (will reconnect on next cycle)');
+      try { await this.client?.logout(); } catch { /* ignore */ }
       this.client = null;
     });
 
