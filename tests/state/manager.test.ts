@@ -427,18 +427,20 @@ describe('StateManager', () => {
       });
     });
 
-    it('returns event reminders based on days until event', () => {
-      const now = new Date();
+    function toLocalISO(date: Date): string {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
 
-      // Event happening tomorrow
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(now.getHours()); // Keep same hour to ensure daysUntil is ~1
+    it('returns morning_of reminder for a same-day timed event', () => {
+      const now = new Date();
+      // 2 hours from now → calcDaysUntil = Math.floor(2/24) = 0, satisfies morning_of
+      const startDate = toLocalISO(new Date(Date.now() + 2 * 60 * 60_000));
 
       manager.saveEvent({
-        title: 'Tomorrow Event',
-        description: 'Happening tomorrow',
-        startDate: tomorrow.toISOString(),
+        title: 'Today Event',
+        description: 'Happening today',
+        startDate,
         endDate: null,
         allDay: false,
         location: 'School',
@@ -447,66 +449,91 @@ describe('StateManager', () => {
 
       const reminders = manager.getDueReminders(now, 'America/New_York');
 
-      // Should have day_before reminder
-      const dayBefore = reminders.find(r => r.reminderType === 'day_before');
-      expect(dayBefore).toBeDefined();
-      expect(dayBefore!.title).toBe('Tomorrow Event');
-      expect(dayBefore!.type).toBe('event');
-      expect(dayBefore!.location).toBe('School');
+      const r = reminders.find(r => r.reminderType === 'morning_of');
+      expect(r).toBeDefined();
+      expect(r!.title).toBe('Today Event');
+      expect(r!.type).toBe('event');
+      expect(r!.location).toBe('School');
     });
 
-    it('returns action item reminders based on deadline', () => {
+    it('returns deadline_today reminder for a same-day action item deadline', () => {
       const now = new Date();
-
-      // Action item due tomorrow
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(now.getHours());
+      const deadline = toLocalISO(new Date(Date.now() + 2 * 60 * 60_000));
 
       manager.saveActionItem({
         title: 'Return Form',
         description: 'Sign it',
-        deadline: tomorrow.toISOString(),
+        deadline,
         priority: 'high',
         sourceEmailId: 'email-1',
       });
 
       const reminders = manager.getDueReminders(now, 'America/New_York');
 
-      const dayBefore = reminders.find(r => r.reminderType === 'day_before' && r.type === 'action_item');
-      expect(dayBefore).toBeDefined();
-      expect(dayBefore!.title).toBe('Return Form');
-      expect(dayBefore!.location).toBeNull();
+      const r = reminders.find(r => r.reminderType === 'deadline_today');
+      expect(r).toBeDefined();
+      expect(r!.title).toBe('Return Form');
+      expect(r!.location).toBeNull();
     });
 
-    it('does not return already-sent reminders', () => {
+    it('does not return already-sent morning_of reminder', () => {
       const now = new Date();
-
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(now.getHours());
+      const startDate = toLocalISO(new Date(Date.now() + 2 * 60 * 60_000));
 
       const event = manager.saveEvent({
         title: 'Already Reminded',
         description: 'Test',
-        startDate: tomorrow.toISOString(),
+        startDate,
         endDate: null,
         allDay: false,
         location: null,
         sourceEmailId: 'email-1',
       });
 
-      // Mark day_before as already sent
-      manager.saveReminder(event.id, null, 'day_before', 'SM_old');
+      manager.saveReminder(event.id, null, 'morning_of', 'MSG_old');
 
       const reminders = manager.getDueReminders(now, 'America/New_York');
-      const dayBefore = reminders.find(r => r.reminderType === 'day_before' && r.itemId === event.id);
-      expect(dayBefore).toBeUndefined();
+      expect(reminders.find(r => r.reminderType === 'morning_of' && r.itemId === event.id)).toBeUndefined();
     });
 
     it('returns empty array when no upcoming items', () => {
       const reminders = manager.getDueReminders(new Date(), 'America/New_York');
       expect(reminders).toEqual([]);
+    });
+
+    it('does NOT fire week_before for an event 7 days away', () => {
+      const startDate = toLocalISO(new Date(Date.now() + 7 * 24 * 60 * 60_000));
+
+      manager.saveEvent({
+        title: 'Far Event',
+        description: '',
+        startDate,
+        endDate: null,
+        allDay: false,
+        location: null,
+        sourceEmailId: 'email-1',
+      });
+
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'week_before')).toBeUndefined();
+      // Also confirm no other day-based reminder fires for this event
+      expect(reminders.find(r => r.reminderType === 'morning_of')).toBeUndefined();
+    });
+
+    it('does NOT fire deadline_approaching for an action item 2 days away', () => {
+      const deadline = toLocalISO(new Date(Date.now() + 2 * 24 * 60 * 60_000));
+
+      manager.saveActionItem({
+        title: 'Future Task',
+        description: '',
+        deadline,
+        priority: 'low',
+        sourceEmailId: 'email-1',
+      });
+
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'deadline_approaching')).toBeUndefined();
+      expect(reminders.find(r => r.reminderType === 'deadline_today')).toBeUndefined();
     });
   });
 
@@ -609,7 +636,7 @@ describe('StateManager', () => {
     });
 
     it('returns both morning_of and fifteen_min_before for a timed event starting in 10 minutes', () => {
-      // This test covers two code paths: getUpcomingEvents(8) produces morning_of,
+      // This test covers two code paths: getUpcomingEvents(1) produces morning_of,
       // getEventsInMinuteWindow(-30, 20) produces fifteen_min_before — both run in getDueReminders.
       insertTimedEvent(10);
       const reminders = manager.getDueReminders(new Date(), 'America/New_York');

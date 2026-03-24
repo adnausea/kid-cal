@@ -215,14 +215,12 @@ export class StateManager {
   getDueReminders(now: Date, timezone: string): DueReminder[] {
     const reminders: DueReminder[] = [];
 
-    // Get events within the next 8 days (covers week_before + buffer)
-    const events = this.getUpcomingEvents(8);
+    // Get events within the next day (morning_of only)
+    const events = this.getUpcomingEvents(1);
     for (const event of events) {
       const days = calcDaysUntil(new Date(event.start_date), now);
       this.pushDueReminders(reminders, [
-        { type: 'week_before', condition: days <= 7 && days > 1 },
-        { type: 'day_before',  condition: days <= 1 && days > 0 },
-        { type: 'morning_of',  condition: days <= 0 && days > -1 },
+        { type: 'morning_of', condition: days <= 0 && days > -1 },
       ], event.id, null, {
         type: 'event',
         itemId: event.id,
@@ -233,15 +231,13 @@ export class StateManager {
       });
     }
 
-    // Get action items within the next 3 days (covers deadline_approaching + buffer)
-    const actionItems = this.getUpcomingActionItems(3);
+    // Get action items within the next day (deadline_today only)
+    const actionItems = this.getUpcomingActionItems(1);
     for (const item of actionItems) {
       if (!item.deadline) continue;
       const days = calcDaysUntil(new Date(item.deadline), now);
       this.pushDueReminders(reminders, [
-        { type: 'deadline_approaching', condition: days <= 2 && days > 1 },
-        { type: 'day_before',           condition: days <= 1 && days > 0 },
-        { type: 'deadline_today',       condition: days <= 0 && days > -1 },
+        { type: 'deadline_today', condition: days <= 0 && days > -1 },
       ], null, item.id, {
         type: 'action_item',
         itemId: item.id,
