@@ -167,8 +167,8 @@ export class StateManager {
   getUpcomingEvents(withinDays: number): StoredEvent[] {
     return this.db.prepare(`
       SELECT * FROM events
-      WHERE start_date >= datetime('now')
-        AND start_date <= datetime('now', '+' || ? || ' days')
+      WHERE start_date >= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        AND start_date <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', ? || ' days')
       ORDER BY start_date ASC
     `).all(withinDays) as StoredEvent[];
   }
@@ -177,10 +177,20 @@ export class StateManager {
     return this.db.prepare(`
       SELECT * FROM action_items
       WHERE deadline IS NOT NULL
-        AND deadline >= datetime('now')
-        AND deadline <= datetime('now', '+' || ? || ' days')
+        AND deadline >= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        AND deadline <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', ? || ' days')
       ORDER BY deadline ASC
     `).all(withinDays) as StoredActionItem[];
+  }
+
+  private getEventsInMinuteWindow(fromMinutes: number, toMinutes: number): StoredEvent[] {
+    return this.db.prepare(`
+      SELECT * FROM events
+      WHERE all_day = 0
+        AND start_date >= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', ? || ' minutes')
+        AND start_date <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', ? || ' minutes')
+      ORDER BY start_date ASC
+    `).all(fromMinutes, toMinutes) as StoredEvent[];
   }
 
   getEmailSubject(messageId: string): string {
@@ -239,6 +249,26 @@ export class StateManager {
         description: item.description,
         date: item.deadline,
         location: null,
+      });
+    }
+
+    // fifteen_min_before: timed events starting within next 20 min or up to 30 min ago.
+    // The SQL window is a coarse filter; the minutesUntil check is defense-in-depth using
+    // JS Date arithmetic (both use local time via new Date(unzoned string)).
+    // nowSec truncates sub-second precision to match the second-level resolution of stored start_date strings.
+    const nowSec = Math.floor(now.getTime() / 1000) * 1000;
+    const nearEvents = this.getEventsInMinuteWindow(-30, 20);
+    for (const event of nearEvents) {
+      const minutesUntil = (new Date(event.start_date).getTime() - nowSec) / 60_000;
+      this.pushDueReminders(reminders, [
+        { type: 'fifteen_min_before', condition: minutesUntil >= -30 && minutesUntil <= 20 },
+      ], event.id, null, {
+        type: 'event',
+        itemId: event.id,
+        title: event.title,
+        description: event.description,
+        date: event.start_date,
+        location: event.location,
       });
     }
 

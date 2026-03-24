@@ -509,4 +509,112 @@ describe('StateManager', () => {
       expect(reminders).toEqual([]);
     });
   });
+
+  describe('getDueReminders - fifteen_min_before', () => {
+    beforeEach(() => {
+      manager.saveProcessedEmail({
+        messageId: 'email-fmb',
+        from: 'teacher@school.org',
+        subject: 'Meeting',
+        processedAt: new Date().toISOString(),
+        status: 'success',
+        errorMessage: null,
+        eventCount: 1,
+        actionItemCount: 0,
+      });
+    });
+
+    // Inserts a timed event (all_day=false) starting N minutes from now.
+    // start_date must be local time (YYYY-MM-DDTHH:MM:SS, no timezone suffix) to match the
+    // stored format AND the SQL strftime('now', 'localtime') comparison.
+    // Do NOT use toISOString() — that returns UTC and will produce wrong comparisons in non-UTC environments.
+    function toLocalISO(date: Date): string {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function insertTimedEvent(minutesFromNow: number): ReturnType<typeof manager.saveEvent> {
+      const startDate = toLocalISO(new Date(Date.now() + minutesFromNow * 60_000));
+      return manager.saveEvent({
+        title: `Event in ${minutesFromNow}min`,
+        description: 'Test event',
+        startDate,
+        endDate: null,
+        allDay: false,
+        location: 'Room 1',
+        sourceEmailId: 'email-fmb',
+      });
+    }
+
+    it('fires fifteen_min_before for a timed event starting in 10 minutes', () => {
+      insertTimedEvent(10);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      const r = reminders.find(r => r.reminderType === 'fifteen_min_before');
+      expect(r).toBeDefined();
+      expect(r!.title).toBe('Event in 10min');
+    });
+
+    it('fires fifteen_min_before at exactly +20 minutes (closed upper bound)', () => {
+      insertTimedEvent(20);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeDefined();
+    });
+
+    it('does NOT fire at +21 minutes', () => {
+      insertTimedEvent(21);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeUndefined();
+    });
+
+    it('fires fifteen_min_before at exactly -30 minutes (closed lower bound, catch-up)', () => {
+      insertTimedEvent(-30);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeDefined();
+    });
+
+    it('does NOT fire at -31 minutes (outside catch-up window)', () => {
+      insertTimedEvent(-31);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeUndefined();
+    });
+
+    it('fires for an event that started 15 minutes ago (within catch-up)', () => {
+      insertTimedEvent(-15);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeDefined();
+    });
+
+    it('does NOT fire for an all-day event even if its start_date is within the window', () => {
+      // Insert with allDay=true but start_date within window — SQL all_day=0 guard must exclude it.
+      // Must use toLocalISO (not toISOString) so the stored value matches the localtime SQL window.
+      const startDate = toLocalISO(new Date(Date.now() + 10 * 60_000));
+      manager.saveEvent({
+        title: 'All Day Event',
+        description: 'No time',
+        startDate,
+        endDate: null,
+        allDay: true,
+        location: null,
+        sourceEmailId: 'email-fmb',
+      });
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeUndefined();
+    });
+
+    it('does NOT fire if already sent', () => {
+      const event = insertTimedEvent(10);
+      manager.saveReminder(event.id, null, 'fifteen_min_before', 'MSG_old');
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeUndefined();
+    });
+
+    it('returns both morning_of and fifteen_min_before for a timed event starting in 10 minutes', () => {
+      // This test covers two code paths: getUpcomingEvents(8) produces morning_of,
+      // getEventsInMinuteWindow(-30, 20) produces fifteen_min_before — both run in getDueReminders.
+      insertTimedEvent(10);
+      const reminders = manager.getDueReminders(new Date(), 'America/New_York');
+      expect(reminders.find(r => r.reminderType === 'fifteen_min_before')).toBeDefined();
+      expect(reminders.find(r => r.reminderType === 'morning_of')).toBeDefined();
+    });
+  });
 });
