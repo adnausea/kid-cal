@@ -77,7 +77,8 @@ export type ReminderType =
   | 'day_before'
   | 'morning_of'
   | 'deadline_approaching'
-  | 'deadline_today';
+  | 'deadline_today'
+  | 'fifteen_min_before';
 
 export interface StoredReminder {
   id: number;
