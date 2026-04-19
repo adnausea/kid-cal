@@ -8,11 +8,26 @@ services:
       - DB_PATH=/data/kid-cal.db
     volumes:
       - kid-cal-data:/data
+    # --- Security hardening ---
+    read_only: true          # Filesystem is read-only (writes only to /data volume)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL                  # Drop every Linux capability
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m   # Writable /tmp if node needs it, but no exec
+    networks:
+      - kid-cal-net
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  kid-cal-net:
+    driver: bridge
+    internal: false          # Needs outbound for IMAP, Telegram, Google/iCloud, Claude API
 
 volumes:
   kid-cal-data:
