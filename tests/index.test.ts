@@ -46,9 +46,29 @@ vi.mock('../src/reminders/scheduler.js', () => ({
 }));
 
 const mockSendNotification = vi.fn();
+const mockPollCommands = vi.fn().mockResolvedValue([]);
 vi.mock('../src/reminders/telegram.js', () => ({
   sendNotification: (...args: unknown[]) => mockSendNotification(...args),
+  pollCommands: (...args: unknown[]) => mockPollCommands(...args),
 }));
+
+vi.mock('../src/health.js', () => {
+  const MockHealthTracker = class {
+    recordPollStart = vi.fn();
+    recordPollSuccess = vi.fn();
+    recordPollFailure = vi.fn();
+    recordExtraction = vi.fn();
+    setImapConnected = vi.fn();
+    getConsecutiveImapFailures = vi.fn().mockReturnValue(0);
+    getStats = vi.fn().mockReturnValue({});
+  };
+  const _tracker = new MockHealthTracker();
+  return {
+    getHealthTracker: () => _tracker,
+    formatStatusMessage: vi.fn().mockReturnValue('status message'),
+    resetHealthTracker: vi.fn(),
+  };
+});
 
 vi.mock('../src/state/database.js', () => ({
   getDatabase: vi.fn(),

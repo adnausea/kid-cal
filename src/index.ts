@@ -9,7 +9,8 @@ import { isSchoolEmail, isBlockedSubject } from './email/filter.js';
 import { extractFromEmail } from './extraction/extractor.js';
 import { createCalendarEvent, createActionItemReminder } from './calendar/service.js';
 import { checkAndSendReminders } from './reminders/scheduler.js';
-import { sendNotification } from './reminders/telegram.js';
+import { sendNotification, pollCommands } from './reminders/telegram.js';
+import { getHealthTracker, formatStatusMessage } from './health.js';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
@@ -101,6 +102,7 @@ export async function processEmails(
         () => extractFromEmail(parsed),
         'Claude extraction',
       );
+      getHealthTracker().recordExtraction();
 
       // Save processed email record
       const emailStatus = extraction.extractionFailed ? 'failed' : 'success';
@@ -270,9 +272,28 @@ export async function retryOrphanedCalendarEvents(stateManager: StateManager): P
   }
 }
 
+export async function handleCommands(stateManager: StateManager): Promise<void> {
+  const logger = getLogger();
+  const health = getHealthTracker();
+
+  try {
+    const commands = await pollCommands();
+    for (const cmd of commands) {
+      if (cmd === '/status') {
+        const statusMsg = formatStatusMessage(health.getStats(), stateManager.getDbStats());
+        await sendNotification(statusMsg);
+        logger.info('Responded to /status command');
+      }
+    }
+  } catch (error) {
+    logger.debug({ error }, 'Command polling failed');
+  }
+}
+
 async function main(): Promise<void> {
   const config = getConfig();
   const logger = getLogger();
+  const health = getHealthTracker();
 
   logger.info('kid-cal starting up');
 
@@ -287,7 +308,6 @@ async function main(): Promise<void> {
   // Initialize email poller
   const poller = new EmailPoller();
 
-  let consecutiveImapFailures = 0;
   let running = true;
 
   // Graceful shutdown
@@ -304,20 +324,24 @@ async function main(): Promise<void> {
 
   // Main polling loop
   while (running) {
+    health.recordPollStart();
+    health.setImapConnected(poller.isConnected());
+
     // Process emails
     try {
       await processEmails(poller, stateManager);
-      consecutiveImapFailures = 0;
+      health.recordPollSuccess();
+      health.setImapConnected(poller.isConnected());
     } catch (error) {
-      consecutiveImapFailures++;
+      health.recordPollFailure();
+      health.setImapConnected(false);
       logger.error(
-        { error, consecutiveFailures: consecutiveImapFailures },
+        { error, consecutiveFailures: health.getConsecutiveImapFailures() },
         'Email processing cycle failed',
       );
 
       // Alert after 8 consecutive IMAP failures
-      if (consecutiveImapFailures >= 8) {
-        consecutiveImapFailures = 0;
+      if (health.getConsecutiveImapFailures() >= 8) {
         try {
           await sendNotification(
             `⚠️ kid-cal: 8 consecutive IMAP failures. Check credentials and connectivity.`
@@ -344,6 +368,9 @@ async function main(): Promise<void> {
     } catch (error) {
       logger.error({ error }, 'Reminder check failed');
     }
+
+    // Check for Telegram commands (/status)
+    await handleCommands(stateManager);
 
     // Wait for next poll cycle
     if (running) {

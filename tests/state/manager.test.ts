@@ -639,4 +639,141 @@ describe('StateManager', () => {
       expect(reminders.find(r => r.reminderType === 'morning_of')).toBeDefined();
     });
   });
+
+  describe('getDbStats', () => {
+    it('returns all zeros on empty database', () => {
+      const stats = manager.getDbStats();
+      expect(stats.totalEvents).toBe(0);
+      expect(stats.totalActionItems).toBe(0);
+      expect(stats.totalProcessedEmails).toBe(0);
+      expect(stats.failedEmails).toBe(0);
+      expect(stats.orphanedEvents).toBe(0);
+      expect(stats.orphanedActionItems).toBe(0);
+      expect(stats.upcomingEvents).toBe(0);
+      expect(stats.upcomingActionItems).toBe(0);
+    });
+
+    it('counts processed emails including failures', () => {
+      manager.saveProcessedEmail({
+        messageId: 'ok-1', from: 'a@b.com', subject: 'S1',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 0, actionItemCount: 0,
+      });
+      manager.saveProcessedEmail({
+        messageId: 'ok-2', from: 'a@b.com', subject: 'S2',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 0, actionItemCount: 0,
+      });
+      manager.saveProcessedEmail({
+        messageId: 'fail-1', from: 'a@b.com', subject: 'S3',
+        processedAt: new Date().toISOString(), status: 'failed',
+        errorMessage: 'oops', eventCount: 0, actionItemCount: 0,
+      });
+
+      const stats = manager.getDbStats();
+      expect(stats.totalProcessedEmails).toBe(3);
+      expect(stats.failedEmails).toBe(1);
+    });
+
+    it('counts events and orphaned events', () => {
+      manager.saveProcessedEmail({
+        messageId: 'email-stats', from: 'a@b.com', subject: 'Test',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 2, actionItemCount: 0,
+      });
+
+      const e1 = manager.saveEvent({
+        title: 'Synced', description: '', startDate: '2025-01-01T09:00:00',
+        endDate: null, allDay: false, location: null, sourceEmailId: 'email-stats',
+        sourceEmailSubject: 'Test',
+      });
+      manager.updateEventCalendarId(e1.id, 'cal-123');
+
+      manager.saveEvent({
+        title: 'Orphan', description: '', startDate: '2025-01-01T10:00:00',
+        endDate: null, allDay: false, location: null, sourceEmailId: 'email-stats',
+        sourceEmailSubject: 'Test',
+      });
+
+      const stats = manager.getDbStats();
+      expect(stats.totalEvents).toBe(2);
+      expect(stats.orphanedEvents).toBe(1);
+    });
+
+    it('counts action items and orphaned action items', () => {
+      manager.saveProcessedEmail({
+        messageId: 'email-ai', from: 'a@b.com', subject: 'Test',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 0, actionItemCount: 2,
+      });
+
+      const a1 = manager.saveActionItem({
+        title: 'Synced', description: '', deadline: '2025-01-10',
+        priority: 'high', sourceEmailId: 'email-ai', sourceEmailSubject: 'Test',
+      });
+      manager.updateActionItemCalendarId(a1.id, 'cal-456');
+
+      manager.saveActionItem({
+        title: 'Orphan', description: '', deadline: '2025-01-11',
+        priority: 'low', sourceEmailId: 'email-ai', sourceEmailSubject: 'Test',
+      });
+
+      const stats = manager.getDbStats();
+      expect(stats.totalActionItems).toBe(2);
+      expect(stats.orphanedActionItems).toBe(1);
+    });
+
+    it('counts upcoming events in next 7 days', () => {
+      manager.saveProcessedEmail({
+        messageId: 'email-up', from: 'a@b.com', subject: 'Test',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 2, actionItemCount: 1,
+      });
+
+      // Event in 2 days (upcoming)
+      const twoDays = toLocalISO(new Date(Date.now() + 2 * 24 * 60 * 60_000));
+      manager.saveEvent({
+        title: 'Soon', description: '', startDate: twoDays,
+        endDate: null, allDay: false, location: null, sourceEmailId: 'email-up',
+        sourceEmailSubject: 'Test',
+      });
+
+      // Event in 10 days (not upcoming)
+      const tenDays = toLocalISO(new Date(Date.now() + 10 * 24 * 60 * 60_000));
+      manager.saveEvent({
+        title: 'Far', description: '', startDate: tenDays,
+        endDate: null, allDay: false, location: null, sourceEmailId: 'email-up',
+        sourceEmailSubject: 'Test',
+      });
+
+      // Action item deadline in 3 days (upcoming)
+      const threeDays = toLocalISO(new Date(Date.now() + 3 * 24 * 60 * 60_000));
+      manager.saveActionItem({
+        title: 'Due Soon', description: '', deadline: threeDays,
+        priority: 'medium', sourceEmailId: 'email-up', sourceEmailSubject: 'Test',
+      });
+
+      const stats = manager.getDbStats();
+      expect(stats.upcomingEvents).toBe(1);
+      expect(stats.upcomingActionItems).toBe(1);
+    });
+
+    it('does not count past events as upcoming', () => {
+      manager.saveProcessedEmail({
+        messageId: 'email-past', from: 'a@b.com', subject: 'Test',
+        processedAt: new Date().toISOString(), status: 'success',
+        errorMessage: null, eventCount: 1, actionItemCount: 0,
+      });
+
+      const yesterday = toLocalISO(new Date(Date.now() - 24 * 60 * 60_000));
+      manager.saveEvent({
+        title: 'Past', description: '', startDate: yesterday,
+        endDate: null, allDay: false, location: null, sourceEmailId: 'email-past',
+        sourceEmailSubject: 'Test',
+      });
+
+      const stats = manager.getDbStats();
+      expect(stats.upcomingEvents).toBe(0);
+    });
+  });
 });

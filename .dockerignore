@@ -1,0 +1,14 @@
+node_modules
+dist
+*.db
+*.db-wal
+*.db-shm
+.env
+*.log
+.git
+.claude
+.idea
+coverage
+tests
+docs
+.worktrees

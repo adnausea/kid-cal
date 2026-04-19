@@ -1,10 +1,10 @@
 # kid-cal
 
-School email → calendar + SMS reminder daemon.
+School email → calendar + Telegram reminder daemon.
 
 ## Architecture
 
-Yahoo IMAP → EmailPoller → EmailFilter → EmailParser → ClaudeExtractor → StateManager (SQLite) → CalendarService (Google) + ReminderScheduler → TwilioService (SMS)
+IMAP (Yahoo/iCloud) → EmailPoller → EmailFilter → EmailParser → ClaudeExtractor → StateManager (SQLite) → CalendarProvider (Google/iCloud CalDAV) + ReminderScheduler → Telegram (notifications)
 
 ## Build & Run
 
@@ -20,8 +20,8 @@ npm test          # Run vitest
 - `src/config.ts` - Zod-validated env config
 - `src/email/` - IMAP polling, parsing (mailparser + html-to-text), school sender filtering
 - `src/extraction/` - Claude API structured output extraction (events + action items)
-- `src/calendar/` - Google Calendar service account integration
-- `src/reminders/` - Twilio SMS + reminder scheduling
+- `src/calendar/` - Calendar provider abstraction (Google Calendar API + iCloud CalDAV via tsdav)
+- `src/reminders/` - Telegram notifications + reminder scheduling
 - `src/state/` - SQLite (better-sqlite3, WAL mode) state management
 
 ## Key Patterns

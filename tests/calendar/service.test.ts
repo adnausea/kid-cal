@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/config.js', () => ({
   getConfig: () => ({
+    CALENDAR_PROVIDER: 'google',
     GOOGLE_CALENDAR_ID: 'test-calendar-id',
     TIMEZONE: 'America/New_York',
+    EMAIL_PROVIDER: 'yahoo',
     LOG_LEVEL: 'error',
   }),
 }));
@@ -18,16 +20,26 @@ vi.mock('../../src/logger.js', () => ({
 
 const mockEventsList = vi.fn();
 const mockEventsInsert = vi.fn();
+const mockEventsUpdate = vi.fn();
 
 vi.mock('../../src/calendar/auth.js', () => ({
   getCalendarClient: () => ({
     events: {
       list: mockEventsList,
       insert: mockEventsInsert,
-      update: vi.fn(),
+      update: mockEventsUpdate,
     },
   }),
 }));
+
+// Reset the provider cache before importing service
+vi.mock('../../src/calendar/provider.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/calendar/provider.js')>();
+  return {
+    ...mod,
+    // provider.ts will create a GoogleCalendarProvider because our mock config says 'google'
+  };
+});
 
 import { createCalendarEvent, createActionItemReminder } from '../../src/calendar/service.js';
 import type { ExtractedEvent, ExtractedActionItem } from '../../src/types.js';
@@ -58,7 +70,7 @@ function makeActionItem(overrides: Partial<ExtractedActionItem> = {}): Extracted
   };
 }
 
-describe('createCalendarEvent', () => {
+describe('createCalendarEvent (via provider)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -91,7 +103,6 @@ describe('createCalendarEvent', () => {
     const insertCall = mockEventsInsert.mock.calls[0][0];
     expect(insertCall.requestBody.start).toEqual({ date: '2025-04-15' });
     expect(insertCall.requestBody.end.date).toBeDefined();
-    // Should not have dateTime
     expect(insertCall.requestBody.start.dateTime).toBeUndefined();
   });
 
@@ -123,7 +134,6 @@ describe('createCalendarEvent', () => {
     const insertCall = mockEventsInsert.mock.calls[0][0];
     expect(insertCall.requestBody.start.dateTime).toBe('2025-04-15T09:00:00');
     expect(insertCall.requestBody.end.dateTime).toBeDefined();
-    // End should be 1 hour after start
     const endDate = new Date(insertCall.requestBody.end.dateTime);
     expect(endDate.getHours()).toBe(new Date('2025-04-15T09:00:00').getHours() + 1);
   });
@@ -151,9 +161,21 @@ describe('createCalendarEvent', () => {
 
     expect(firstUID).toBe(secondUID);
   });
+
+  it('restores trashed calendar events', async () => {
+    mockEventsList.mockResolvedValue({
+      data: { items: [{ id: 'trashed-id', status: 'cancelled' }] },
+    });
+
+    const id = await createCalendarEvent(makeEvent());
+    expect(id).toBe('trashed-id');
+    expect(mockEventsUpdate).toHaveBeenCalled();
+    const updateCall = mockEventsUpdate.mock.calls[0][0];
+    expect(updateCall.requestBody.status).toBe('confirmed');
+  });
 });
 
-describe('createActionItemReminder', () => {
+describe('createActionItemReminder (via provider)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

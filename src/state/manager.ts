@@ -9,6 +9,7 @@ import type {
   DueReminder,
 } from '../types.js';
 import { getLogger } from '../logger.js';
+import type { DbStats } from '../health.js';
 
 function calcDaysUntil(target: Date, now: Date): number {
   return Math.floor((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
@@ -269,5 +270,32 @@ export class StateManager {
     }
 
     return reminders;
+  }
+
+  getDbStats(): DbStats {
+    const count = (sql: string): number => {
+      const row = this.db.prepare(sql).get() as { c: number };
+      return row.c;
+    };
+
+    return {
+      totalEvents: count('SELECT COUNT(*) as c FROM events'),
+      totalActionItems: count('SELECT COUNT(*) as c FROM action_items'),
+      totalProcessedEmails: count('SELECT COUNT(*) as c FROM processed_emails'),
+      failedEmails: count("SELECT COUNT(*) as c FROM processed_emails WHERE status = 'failed'"),
+      orphanedEvents: count('SELECT COUNT(*) as c FROM events WHERE calendar_event_id IS NULL'),
+      orphanedActionItems: count('SELECT COUNT(*) as c FROM action_items WHERE calendar_event_id IS NULL'),
+      upcomingEvents: count(`
+        SELECT COUNT(*) as c FROM events
+        WHERE start_date >= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+          AND start_date <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', '7 days')
+      `),
+      upcomingActionItems: count(`
+        SELECT COUNT(*) as c FROM action_items
+        WHERE deadline IS NOT NULL
+          AND deadline >= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+          AND deadline <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', '7 days')
+      `),
+    };
   }
 }
