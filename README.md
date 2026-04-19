@@ -1,8 +1,8 @@
 # kid-cal
 
-School email → Google Calendar + Telegram reminder daemon.
+School email → calendar + Telegram reminder daemon.
 
-Monitors a Yahoo Mail inbox for school communications, uses Claude to extract structured events and action items, adds them to Google Calendar, and sends Telegram reminders for upcoming deadlines.
+Monitors an email inbox (iCloud, Yahoo, or any IMAP provider) for school communications, uses Claude to extract structured events and action items, syncs them to your calendar (iCloud or Google), and sends Telegram reminders for upcoming deadlines.
 
 Built as a personal productivity tool, but engineered using the same reliability, idempotency, and integration discipline applied to production backend systems.
 
@@ -17,7 +17,7 @@ Managing school schedules often means:
 - Missed updates and deadlines
 - Fragmented reminders
 
-Kid-Cal automates that flow. It runs locally as a background service, turning incoming school emails into structured calendar events and pushing Telegram notifications when appropriate.
+Kid-Cal automates that flow. It runs as a containerized background service, turning incoming school emails into structured calendar events and pushing Telegram notifications when appropriate.
 
 The goal was not just automation — but building it with strong engineering fundamentals.
 
@@ -27,11 +27,11 @@ The goal was not just automation — but building it with strong engineering fun
 
 ```mermaid
 sequenceDiagram
-    participant IMAP as Yahoo IMAP
+    participant IMAP as IMAP (iCloud/Yahoo)
     participant Filter as Email Filter
     participant Claude as Claude API
     participant DB as SQLite
-    participant GCal as Google Calendar
+    participant Cal as Calendar (iCloud/Google)
     participant TG as Telegram
 
     loop Every N minutes
@@ -41,9 +41,9 @@ sequenceDiagram
         Claude-->>Filter: Events + Action Items (structured)
         Filter->>DB: Dedup check + save
         DB-->>Filter: Not duplicate
-        Filter->>GCal: Create calendar events
-        Filter->>GCal: Create action item reminders
-        GCal-->>Filter: Calendar event IDs
+        Filter->>Cal: Create calendar events
+        Filter->>Cal: Create action item reminders
+        Cal-->>Filter: Calendar event IDs
         Filter->>DB: Save calendar IDs
         Filter->>TG: Alert on failure
     end
@@ -64,6 +64,11 @@ sequenceDiagram
 - **Sender-level**: Only emails from configured school domains or addresses proceed to extraction. Non-school emails are cached in-memory to avoid re-checking them each cycle.
 - **Grade-level**: Claude is instructed to extract only content relevant to the child's grade (school-wide events and middle school transition content are also kept).
 
+Supported email providers:
+- **iCloud Mail** (`imap.mail.me.com`)
+- **Yahoo Mail** (`imap.mail.yahoo.com`)
+- **Any IMAP provider** via custom `IMAP_HOST`/`IMAP_PORT`
+
 ### Structured Extraction via Claude
 
 School emails are passed to Claude with a system prompt that instructs it to extract two artifact types:
@@ -71,7 +76,7 @@ School emails are passed to Claude with a system prompt that instructs it to ext
 - **Events** — calendar items with title, dates, location, all-day flag
 - **Action Items** — deadlines with title, description, priority, due date
 
-Output is validated against a Zod schema using the Anthropic SDK's structured output mode (`zodOutputFormat`). A post-extraction keyword filter removes any items that slipped through for the wrong grade.
+Output is validated against a Zod schema using the Anthropic SDK's structured output mode (`zodOutputFormat`). A post-extraction keyword filter removes any items that slipped through for the wrong grade. Past-dated events and action items are automatically skipped.
 
 ### State Management
 
@@ -80,26 +85,59 @@ SQLite (WAL mode, `better-sqlite3`) tracks four tables:
 | Table | Purpose |
 |---|---|
 | `processed_emails` | Deduplication — prevents reprocessing the same email |
-| `events` | Extracted calendar events + their Google Calendar IDs |
-| `action_items` | Extracted deadlines + their Google Calendar IDs |
+| `events` | Extracted calendar events + their calendar IDs |
+| `action_items` | Extracted deadlines + their calendar IDs |
 | `sent_reminders` | Tracks which reminders have been sent |
 
 Cross-email deduplication runs at save time — the same event title + date from different emails won't create duplicates.
 
 ### Calendar Integration
 
-Events and action items are written to Google Calendar via a service account. Calendar event creation uses deterministic `iCalUID` values derived from the source data, making creation idempotent. If a calendar write fails, the DB record is saved without a `calendar_event_id` and retried on the next poll cycle.
+Events and action items are written to your calendar via a provider abstraction (`CalendarProvider` interface):
+
+- **iCloud Calendar** — CalDAV via `tsdav`, using app-specific passwords
+- **Google Calendar** — service account API, using `googleapis`
+
+Both providers use deterministic UID/iCalUID values derived from the source data, making creation idempotent. If a calendar write fails, the DB record is saved without a `calendar_event_id` and retried on the next poll cycle.
+
+### Health Monitoring
+
+Send `/status` to the Telegram bot for a real-time dashboard:
+
+```
+📊 kid-cal status
+
+⏱ Uptime: 2d 3h 15m
+🟢 IMAP: connected
+📬 Email: icloud (user@icloud.com)
+📅 Calendar: icloud
+
+🔄 Last poll: 3m ago
+✅ Last success: 3m ago
+🤖 Last extraction: 1h 15m ago
+
+📈 Totals: 288 polls, 12 extractions
+📧 Processed: 50 emails (3 failed)
+📅 Events: 25 (2 pending sync)
+✅ Action items: 15 (1 pending sync)
+🔜 Upcoming: 4 events, 6 deadlines (7d)
+```
 
 ### Reminders
 
-A scheduler runs every N minutes and sends Telegram notifications for action items due within a configurable window and morning digests of same-day deadlines. Alerts are also sent on extraction failures and after 3 consecutive IMAP failures.
+A scheduler runs every N minutes and sends Telegram notifications for:
+- Events happening today (morning reminder)
+- Events starting in 15 minutes
+- Action item deadlines due today
+
+Alerts are also sent on extraction failures and after 8 consecutive IMAP failures.
 
 ### Reliability
 
 - Exponential backoff (1s → 4s → 16s) on all external calls
 - Orphaned event retry — DB records without `calendar_event_id` are retried each cycle
 - Graceful shutdown on `SIGTERM`/`SIGINT` with IMAP disconnect and DB close
-- IMAP failure alerting via Telegram after 3 consecutive failures
+- IMAP failure alerting via Telegram after 8 consecutive failures
 
 ---
 
@@ -107,13 +145,15 @@ A scheduler runs every N minutes and sends Telegram notifications for action ite
 
 Even as a personal tool, the system is built with:
 
-**Clear domain boundaries** — Ingestion (IMAP), extraction (Claude), persistence (SQLite), and integration adapters (Google Calendar, Telegram) are fully separated.
+**Clear domain boundaries** — Ingestion (IMAP), extraction (Claude), persistence (SQLite), and integration adapters (calendar, Telegram) are fully separated.
+
+**Provider abstraction** — Email and calendar providers are swappable via config. Adding a new provider means implementing a single interface.
 
 **Idempotent sync** — Deterministic calendar IDs, cross-email deduplication, and safe reprocessing mean the daemon can be stopped and restarted without creating duplicate events.
 
-**Explicit integration adapters** — External systems are isolated, allowing notification providers to be swapped (Twilio → Telegram), failure handling to be controlled, and each layer to be tested independently.
+**Explicit integration adapters** — External systems are isolated, allowing providers to be swapped (Yahoo → iCloud, Google Calendar → iCloud CalDAV), failure handling to be controlled, and each layer to be tested independently.
 
-**Minimal operational surface** — SQLite for local reliability, no cloud infrastructure required, no UI layer, background execution via `launchd`.
+**Minimal operational surface** — SQLite for local reliability, Docker for deployment, no cloud infrastructure required beyond the APIs it talks to.
 
 ---
 
@@ -124,13 +164,13 @@ Even as a personal tool, the system is built with:
 | Language | TypeScript (ESM) |
 | Email | imapflow, mailparser, html-to-text |
 | AI Extraction | Anthropic Claude (structured output + Zod) |
-| Calendar | Google Calendar API (service account) |
+| Calendar | Google Calendar API (googleapis) or iCloud CalDAV (tsdav) |
 | Notifications | Telegram Bot API |
 | Database | SQLite (better-sqlite3, WAL mode) |
 | Config validation | Zod |
 | Logging | pino |
-| Testing | Vitest |
-| Daemon | macOS launchd |
+| Testing | Vitest (236 tests) |
+| Deployment | Docker (recommended) or macOS launchd |
 
 ---
 
@@ -138,18 +178,11 @@ Even as a personal tool, the system is built with:
 
 ### Prerequisites
 
-- Node.js 20+
-- Yahoo Mail with IMAP enabled and an app password
-- Anthropic API key
-- Google Cloud service account with Google Calendar API access
-- Telegram bot token and chat ID
-
-### Install
-
-```bash
-npm install
-npm run build
-```
+- Docker and Docker Compose (recommended) or Node.js 20+
+- An email account with IMAP access (iCloud, Yahoo, or any IMAP provider)
+- Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
+- A calendar provider: iCloud account or Google Cloud service account
+- Telegram bot token from [@BotFather](https://t.me/BotFather)
 
 ### Environment Variables
 
@@ -157,23 +190,31 @@ Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 ```
 
 | Variable | Required | Description |
 |---|---|---|
-| `IMAP_USER` | ✓ | Yahoo Mail address |
-| `IMAP_PASSWORD` | ✓ | Yahoo app password |
+| `EMAIL_PROVIDER` | | `yahoo` or `icloud` (default: `yahoo`) — sets IMAP defaults |
+| `IMAP_HOST` | | Override IMAP host (auto-set by `EMAIL_PROVIDER`) |
+| `IMAP_PORT` | | Override IMAP port (default: `993`) |
+| `IMAP_USER` | ✓ | Email address |
+| `IMAP_PASSWORD` | ✓ | App-specific password |
 | `SCHOOL_SENDER_DOMAINS` | ✓ | Comma-separated domains (e.g. `school.org`) |
 | `SCHOOL_SENDER_ADDRESSES` | | Comma-separated individual addresses |
 | `ANTHROPIC_API_KEY` | ✓ | Anthropic API key |
 | `CLAUDE_MODEL` | | Defaults to `claude-sonnet-4-5-20250929` |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | ✓ | Service account email |
-| `GOOGLE_PRIVATE_KEY` | ✓ | Service account private key |
-| `GOOGLE_CALENDAR_ID` | ✓ | Target calendar ID |
+| `CALENDAR_PROVIDER` | | `google` or `icloud` (default: `google`) |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | google | Service account email |
+| `GOOGLE_PRIVATE_KEY` | google | Service account private key |
+| `GOOGLE_CALENDAR_ID` | google | Target calendar ID |
+| `ICLOUD_USERNAME` | icloud | Apple ID email |
+| `ICLOUD_APP_PASSWORD` | icloud | App-specific password |
 | `TELEGRAM_BOT_TOKEN` | ✓ | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | ✓ | Telegram chat ID for notifications |
 | `CHILD_GRADE` | | Child's grade (default: `5`) |
 | `EXCLUDE_KEYWORDS` | | Comma-separated keywords to filter out |
+| `BLOCKED_SUBJECT_KEYWORDS` | | Comma-separated subject keywords to skip entirely |
 | `POLL_INTERVAL_MINUTES` | | Default: `5` |
 | `REMINDER_CHECK_INTERVAL_MINUTES` | | Default: `15` |
 | `TIMEZONE` | | Default: `America/New_York` |
@@ -181,97 +222,35 @@ cp .env.example .env
 | `DB_PATH` | | Default: `./kid-cal.db` |
 | `LOG_LEVEL` | | `trace/debug/info/warn/error/fatal` (default: `info`) |
 
-### Commands
-
-```bash
-npm run build     # Compile TypeScript
-npm run dev       # Run with tsx (no compile step)
-npm start         # Run compiled JS
-npm test          # Run test suite
-```
-
 ---
 
 ## Docker Deployment (Recommended)
-
-### Prerequisites
-
-- Docker and Docker Compose
-- An iCloud or Yahoo email account with an [app-specific password](https://support.apple.com/en-us/102654)
-- Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
-- Google Calendar service account **or** iCloud account for calendar
-- Telegram bot token from [@BotFather](https://t.me/BotFather)
-
-### Setup
 
 ```bash
 git clone https://github.com/adnausea/kid-cal.git
 cd kid-cal
 cp .env.example .env
-```
-
-Edit `.env` with your credentials:
-
-```bash
-# Choose providers
-EMAIL_PROVIDER=icloud          # or 'yahoo'
-CALENDAR_PROVIDER=icloud       # or 'google'
-
-# iCloud credentials (app-specific password)
-IMAP_USER=you@icloud.com
-IMAP_PASSWORD=xxxx-xxxx-xxxx-xxxx
-ICLOUD_USERNAME=you@icloud.com
-ICLOUD_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
-
-# School filtering
-SCHOOL_SENDER_DOMAINS=yourschool.org
-
-# Claude API
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Telegram bot
-TELEGRAM_BOT_TOKEN=123456789:AAF...
-TELEGRAM_CHAT_ID=123456789      # Message your bot, then check getUpdates
-```
-
-Lock down the env file:
-
-```bash
+# Edit .env with your credentials
 chmod 600 .env
-```
 
-### Build and Run
-
-```bash
 docker compose up -d --build
 ```
 
 ### Verify
 
 ```bash
-# Check container is running
 docker ps --filter name=kid-cal
-
-# Watch logs
 docker logs -f kid-cal
 
-# Send /status to your Telegram bot for a health dashboard
+# Send /status to your Telegram bot
 ```
 
 ### Manage
 
 ```bash
-# Stop
-docker compose down
-
-# Restart after config changes
-docker compose restart
-
-# Rebuild after code changes
-git pull && docker compose up -d --build
-
-# View database
-docker compose exec kid-cal sh -c 'sqlite3 /data/kid-cal.db ".headers on" ".mode column" "SELECT * FROM events;"'
+docker compose down                              # Stop
+docker compose restart                           # Restart
+git pull && docker compose up -d --build         # Update
 ```
 
 ### Security
@@ -285,48 +264,29 @@ The container runs with:
 
 ---
 
-## Daemon (macOS launchd)
+## Local Development
 
 ```bash
-# Install
+npm install
+npm run build     # Compile TypeScript
+npm run dev       # Run with tsx (no compile step)
+npm start         # Run compiled JS
+npm test          # Run test suite (236 tests)
+```
+
+---
+
+## macOS launchd (Alternative)
+
+```bash
 cp com.kid-cal.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.kid-cal.plist
-
-# Start / stop / restart
 launchctl start com.kid-cal
-launchctl stop com.kid-cal
-launchctl stop com.kid-cal && launchctl start com.kid-cal
-
-# Status (PID + exit code)
-launchctl list | grep kid-cal
-
-# Rebuild and restart after code changes
-npm run build && launchctl stop com.kid-cal && launchctl start com.kid-cal
 
 # Logs
-tail -f kid-cal.log           # stdout
-tail -f kid-cal-error.log     # stderr
-
-# Uninstall
-launchctl unload ~/Library/LaunchAgents/com.kid-cal.plist
+tail -f kid-cal.log
+tail -f kid-cal-error.log
 ```
-
----
-
-## Database Inspection
-
-```bash
-sqlite3 kid-cal.db ".headers on" ".mode column" "SELECT * FROM events;"
-sqlite3 kid-cal.db "SELECT * FROM action_items;"
-sqlite3 kid-cal.db "SELECT * FROM processed_emails;"
-sqlite3 kid-cal.db "SELECT * FROM sent_reminders;"
-```
-
----
-
-## Status
-
-Actively used and evolving personal automation service.
 
 ---
 
