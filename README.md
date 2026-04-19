@@ -193,6 +193,43 @@ cp .env.example .env
 chmod 600 .env
 ```
 
+**iCloud setup:**
+
+```env
+EMAIL_PROVIDER=icloud
+IMAP_USER=you@icloud.com
+IMAP_PASSWORD=xxxx-xxxx-xxxx-xxxx          # App-specific password from appleid.apple.com
+
+CALENDAR_PROVIDER=icloud
+ICLOUD_USERNAME=you@icloud.com
+ICLOUD_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx    # Same or separate app-specific password
+
+SCHOOL_SENDER_DOMAINS=myschool.org,district.edu
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxx...
+TELEGRAM_BOT_TOKEN=1234567890:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TELEGRAM_CHAT_ID=9876543210
+```
+
+**Google Calendar + Yahoo setup:**
+
+```env
+EMAIL_PROVIDER=yahoo
+IMAP_USER=you@yahoo.com
+IMAP_PASSWORD=xxxxxxxxxxxx                 # App password from Yahoo account security
+
+CALENDAR_PROVIDER=google
+GOOGLE_SERVICE_ACCOUNT_EMAIL=kid-cal@my-project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nXXXXX...\n-----END RSA PRIVATE KEY-----"
+GOOGLE_CALENDAR_ID=xxxxxxxxxx@group.calendar.google.com
+
+SCHOOL_SENDER_DOMAINS=myschool.org
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxx...
+TELEGRAM_BOT_TOKEN=1234567890:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TELEGRAM_CHAT_ID=9876543210
+```
+
+**Full reference:**
+
 | Variable | Required | Description |
 |---|---|---|
 | `EMAIL_PROVIDER` | | `yahoo` or `icloud` (default: `yahoo`) — sets IMAP defaults |
