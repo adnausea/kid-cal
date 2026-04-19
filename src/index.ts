@@ -212,21 +212,6 @@ export async function processEmails(
         'Email processed successfully',
       );
 
-      // Notify via Telegram with event details (only if something was extracted)
-      if (!extraction.extractionFailed && (extraction.events.length > 0 || extraction.actionItems.length > 0)) {
-        try {
-          const msg = formatProcessedEmailMessage(
-            parsed.subject,
-            parsed.from,
-            extraction.summary,
-            extraction.events,
-            extraction.actionItems,
-          );
-          await sendNotification(msg);
-        } catch {
-          // Best effort notification
-        }
-      }
     } catch (error) {
       logger.error({ error, uid: raw.uid, messageId: raw.messageId }, 'Failed to process email');
 
