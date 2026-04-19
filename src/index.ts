@@ -133,9 +133,15 @@ export async function processEmails(
         }
       }
 
-      // Create calendar events (with cross-email dedup)
+      // Create calendar events (with cross-email dedup, skip past events)
+      const now = new Date();
       for (const event of extraction.events) {
         try {
+          if (new Date(event.startDate) < now) {
+            logger.info({ title: event.title, startDate: event.startDate }, 'Skipping past event');
+            continue;
+          }
+
           const duplicate = stateManager.findDuplicateEvent(event.title, event.startDate);
           if (duplicate) {
             logger.info(
@@ -161,9 +167,14 @@ export async function processEmails(
         }
       }
 
-      // Create action item reminders on calendar (with cross-email dedup)
+      // Create action item reminders on calendar (with cross-email dedup, skip past deadlines)
       for (const item of extraction.actionItems) {
         try {
+          if (item.deadline && new Date(item.deadline) < now) {
+            logger.info({ title: item.title, deadline: item.deadline }, 'Skipping past action item');
+            continue;
+          }
+
           const duplicate = stateManager.findDuplicateActionItem(item.title, item.deadline);
           if (duplicate) {
             logger.info(

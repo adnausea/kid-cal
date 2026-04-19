@@ -129,12 +129,16 @@ const parsedEmail = {
   cleanText: 'Field trip text',
 };
 
+// Use future dates so the past-date filter doesn't skip them
+const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+const futureDeadline = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
 const extraction = {
   events: [
     {
       title: 'Field Trip',
       description: 'Zoo visit',
-      startDate: '2025-04-15T09:00:00',
+      startDate: `${futureDate}T09:00:00`,
       endDate: null,
       allDay: false,
       location: 'Zoo',
@@ -146,7 +150,7 @@ const extraction = {
     {
       title: 'Permission Slip',
       description: 'Sign and return',
-      deadline: '2025-04-10',
+      deadline: futureDeadline,
       priority: 'high' as const,
       sourceEmailId: 'msg-1',
       sourceEmailSubject: 'School Newsletter',
