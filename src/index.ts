@@ -10,6 +10,7 @@ import { extractFromEmail } from './extraction/extractor.js';
 import { createCalendarEvent, createActionItemReminder } from './calendar/service.js';
 import { checkAndSendReminders } from './reminders/scheduler.js';
 import { sendNotification, pollCommands } from './reminders/telegram.js';
+import { formatProcessedEmailMessage } from './reminders/templates.js';
 import { getHealthTracker, formatStatusMessage } from './health.js';
 
 const MAX_RETRIES = 3;
@@ -199,6 +200,22 @@ export async function processEmails(
         },
         'Email processed successfully',
       );
+
+      // Notify via Telegram with event details
+      if (!extraction.extractionFailed) {
+        try {
+          const msg = formatProcessedEmailMessage(
+            parsed.subject,
+            parsed.from,
+            extraction.summary,
+            extraction.events,
+            extraction.actionItems,
+          );
+          await sendNotification(msg);
+        } catch {
+          // Best effort notification
+        }
+      }
     } catch (error) {
       logger.error({ error, uid: raw.uid, messageId: raw.messageId }, 'Failed to process email');
 
