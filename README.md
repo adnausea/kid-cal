@@ -192,6 +192,99 @@ npm test          # Run test suite
 
 ---
 
+## Docker Deployment (Recommended)
+
+### Prerequisites
+
+- Docker and Docker Compose
+- An iCloud or Yahoo email account with an [app-specific password](https://support.apple.com/en-us/102654)
+- Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
+- Google Calendar service account **or** iCloud account for calendar
+- Telegram bot token from [@BotFather](https://t.me/BotFather)
+
+### Setup
+
+```bash
+git clone https://github.com/adnausea/kid-cal.git
+cd kid-cal
+cp .env.example .env
+```
+
+Edit `.env` with your credentials:
+
+```bash
+# Choose providers
+EMAIL_PROVIDER=icloud          # or 'yahoo'
+CALENDAR_PROVIDER=icloud       # or 'google'
+
+# iCloud credentials (app-specific password)
+IMAP_USER=you@icloud.com
+IMAP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+ICLOUD_USERNAME=you@icloud.com
+ICLOUD_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+
+# School filtering
+SCHOOL_SENDER_DOMAINS=yourschool.org
+
+# Claude API
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Telegram bot
+TELEGRAM_BOT_TOKEN=123456789:AAF...
+TELEGRAM_CHAT_ID=123456789      # Message your bot, then check getUpdates
+```
+
+Lock down the env file:
+
+```bash
+chmod 600 .env
+```
+
+### Build and Run
+
+```bash
+docker compose up -d --build
+```
+
+### Verify
+
+```bash
+# Check container is running
+docker ps --filter name=kid-cal
+
+# Watch logs
+docker logs -f kid-cal
+
+# Send /status to your Telegram bot for a health dashboard
+```
+
+### Manage
+
+```bash
+# Stop
+docker compose down
+
+# Restart after config changes
+docker compose restart
+
+# Rebuild after code changes
+git pull && docker compose up -d --build
+
+# View database
+docker compose exec kid-cal sh -c 'sqlite3 /data/kid-cal.db ".headers on" ".mode column" "SELECT * FROM events;"'
+```
+
+### Security
+
+The container runs with:
+- Non-root user
+- Read-only filesystem (writes only to `/data` volume)
+- All Linux capabilities dropped
+- `no-new-privileges` flag
+- `/tmp` mounted as `noexec,nosuid`
+
+---
+
 ## Daemon (macOS launchd)
 
 ```bash
